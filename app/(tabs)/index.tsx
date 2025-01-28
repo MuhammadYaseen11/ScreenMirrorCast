@@ -1,13 +1,24 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, Button, FlatList, TouchableOpacity } from 'react-native';
-import { NetworkInfo } from 'react-native-network-info'; // Correct import
-import socketIOClient from 'socket.io-client'; // Import socket.io-client
-import dgram from 'react-native-udp'; // UDP library
+import { NetworkInfo } from 'react-native-network-info'; // Correct import for getting the device IP
+import socketIOClient from 'socket.io-client'; // For communication with the TV
+import Zeroconf from 'react-native-zeroconf'; // For discovering devices via mDNS
 
 const App = () => {
   const [ip, setIp] = useState('');
   const [devices, setDevices] = useState<string[]>([]); // Explicitly typing the state
   const [isConnected, setIsConnected] = useState(false);
+  const [zeroconf, setZeroconf] = useState<any>(null); // Set Zeroconf instance
+
+  useEffect(() => {
+    // Ensure Zeroconf is initialized when the component mounts
+    const zconf = new Zeroconf();
+    setZeroconf(zconf);
+    return () => {
+      // Clean up when the component is unmounted
+      zconf.stop();
+    };
+  }, []);
 
   // Get the device's local IP address
   const getIpAddress = async () => {
@@ -23,39 +34,9 @@ const App = () => {
     }
   };
 
-  // Set up a UDP client to send a discovery message
-  const searchForDevices = async () => {
-    const client = dgram.createSocket({ type: 'udp4' }); // Create a UDP client
-    const message = Buffer.from('DISCOVER'); // Message to send for device discovery
-
-    // Broadcast to the local network
-    const broadcastAddress = '255.255.255.255'; // Broadcast address
-    const port = 12345; // Port to send the message to
-    client.send(message, 0, message.length, port, broadcastAddress, (err) => {
-      if (err) {
-        console.error('Error sending broadcast:', err);
-      } else {
-        console.log('Discovery message sent');
-      }
-    });
-
-    // Listen for incoming responses on the broadcast port
-    client.on('message', (msg, rinfo) => {
-      console.log(`Received message: ${msg} from ${rinfo.address}:${rinfo.port}`);
-      if (msg.toString() === 'TV_RESPONSE') {
-        // Assuming TV responds with 'TV_RESPONSE'
-        setDevices((prevDevices) => [...prevDevices, rinfo.address]); // Add found IPs to the list
-      }
-    });
-
-    client.bind(12345, () => {
-      client.setBroadcast(true); // Enable broadcasting
-    });
-  };
-
+  // Connect to the TV
   const connectToTV = (tvIp: string) => {
-    // Implement socket connection to the TV, assuming it's on port 3000
-    const socket = socketIOClient(`http://${tvIp}:3000`);
+    const socket = socketIOClient(`http://${tvIp}:3000`); // Assuming port 3000 for communication
 
     socket.on('connect', () => {
       setIsConnected(true);
@@ -72,6 +53,7 @@ const App = () => {
     });
   };
 
+  // Send media to the TV (for example, a video file)
   const sendMediaToTV = (mediaUrl: string) => {
     if (isConnected) {
       const socket = socketIOClient(ip);
@@ -82,8 +64,28 @@ const App = () => {
     }
   };
 
+  // Example: Button to send a video media file
   const handleSendVideo = () => {
     sendMediaToTV('http://path/to/video/file.mp4');
+  };
+
+  // Search for TV devices on the local network using Zeroconf (mDNS)
+  const searchForDevices = () => {
+    if (zeroconf) {
+      zeroconf.scan('_http._tcp.local.'); // Start discovering devices with the service type '_http._tcp.local.'
+      
+      zeroconf.on('found', (service: any) => {
+        console.log('Found service:', service);
+        const tvDeviceList = service.addresses.map((address: string) => address);
+        setDevices(tvDeviceList);
+      });
+
+      zeroconf.on('error', (error: Error) => {
+        console.log('Error discovering devices:', error);
+      });
+    } else {
+      console.log('Zeroconf is not initialized.');
+    }
   };
 
   return (
