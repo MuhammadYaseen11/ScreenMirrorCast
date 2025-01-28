@@ -1,74 +1,87 @@
-import { Image, StyleSheet, Platform } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, Button, FlatList, TouchableOpacity } from 'react-native';
+import { NetworkInfo } from 'react-native-network-info'; // Correct import
+import socketIOClient from 'socket.io-client'; // For communication between the phone and TV
 
-import { HelloWave } from '@/components/HelloWave';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
+const App = () => {
+  const [ip, setIp] = useState('');
+  const [devices, setDevices] = useState<string[]>([]); // Explicitly typing the state
+  const [isConnected, setIsConnected] = useState(false);
 
-export default function HomeScreen() {
+  // Get the device's local IP address
+  const getIpAddress = async () => {
+    try {
+      const localIp = await NetworkInfo.getIPAddress();
+      if (localIp) {
+        setIp(localIp);
+      } else {
+        console.log('IP address is null');
+      }
+    } catch (error) {
+      console.log('Error getting IP address:', error);
+    }
+  };
+
+  const connectToTV = (tvIp: string) => {
+    const socket = socketIOClient(`http://${tvIp}:3000`); // Assuming port 3000, update if necessary
+  
+    socket.on('connect', () => {
+      setIsConnected(true);
+      console.log('Connected to TV');
+    });
+  
+    socket.on('disconnect', () => {
+      setIsConnected(false);
+      console.log('Disconnected from TV');
+    });
+  
+    socket.on('connect_error', (err) => {
+      console.log(`Connection failed: ${err.message}`);
+    });
+  };
+  
+
+  // Send a media file to the TV (for example, a video file)
+  const sendMediaToTV = (mediaUrl: string) => {
+    if (isConnected) {
+      const socket = socketIOClient(ip);
+      socket.emit('media', mediaUrl);
+      console.log(`Sending media: ${mediaUrl}`);
+    } else {
+      console.log('No connection to TV');
+    }
+  };
+
+  // Example: Button to send video media
+  const handleSendVideo = () => {
+    sendMediaToTV('http://path/to/video/file.mp4');
+  };
+
+  // Use the IP matching method here if the TV app is running and listens for the specific IP
+  const searchForDevices = async () => {
+    // Implement search logic based on TV app's IP matching functionality.
+    const tvDeviceList = ['192.168.1.2', '192.168.1.3']; // Example IPs
+    setDevices(tvDeviceList);
+  };
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12'
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-        <ThemedText>
-          Tap the Explore tab to learn more about what's included in this starter app.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          When you're ready, run{' '}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <Text>Screen Mirror Cast</Text>
+      <Text>Device IP: {ip}</Text>
+      <Button title="Get Device IP" onPress={getIpAddress} />
+      <Button title="Search for TVs" onPress={searchForDevices} />
+      <FlatList
+        data={devices}
+        keyExtractor={(item) => item}
+        renderItem={({ item }) => (
+          <TouchableOpacity onPress={() => connectToTV(item)}>
+            <Text>{item}</Text>
+          </TouchableOpacity>
+        )}
+      />
+      <Button title="Send Video to TV" onPress={handleSendVideo} />
+    </View>
   );
-}
+};
 
-const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-  },
-});
+export default App;
