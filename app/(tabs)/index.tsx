@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, Button, FlatList, TouchableOpacity } from 'react-native';
 import { NetworkInfo } from 'react-native-network-info'; // Correct import
-import socketIOClient from 'socket.io-client'; // For communication between the phone and TV
+import socketIOClient from 'socket.io-client'; // Import socket.io-client
+import dgram from 'react-native-udp'; // UDP library
 
 const App = () => {
   const [ip, setIp] = useState('');
@@ -22,26 +23,55 @@ const App = () => {
     }
   };
 
+  // Set up a UDP client to send a discovery message
+  const searchForDevices = async () => {
+    const client = dgram.createSocket({ type: 'udp4' }); // Create a UDP client
+    const message = Buffer.from('DISCOVER'); // Message to send for device discovery
+
+    // Broadcast to the local network
+    const broadcastAddress = '255.255.255.255'; // Broadcast address
+    const port = 12345; // Port to send the message to
+    client.send(message, 0, message.length, port, broadcastAddress, (err) => {
+      if (err) {
+        console.error('Error sending broadcast:', err);
+      } else {
+        console.log('Discovery message sent');
+      }
+    });
+
+    // Listen for incoming responses on the broadcast port
+    client.on('message', (msg, rinfo) => {
+      console.log(`Received message: ${msg} from ${rinfo.address}:${rinfo.port}`);
+      if (msg.toString() === 'TV_RESPONSE') {
+        // Assuming TV responds with 'TV_RESPONSE'
+        setDevices((prevDevices) => [...prevDevices, rinfo.address]); // Add found IPs to the list
+      }
+    });
+
+    client.bind(12345, () => {
+      client.setBroadcast(true); // Enable broadcasting
+    });
+  };
+
   const connectToTV = (tvIp: string) => {
-    const socket = socketIOClient(`http://${tvIp}:3000`); // Assuming port 3000, update if necessary
-  
+    // Implement socket connection to the TV, assuming it's on port 3000
+    const socket = socketIOClient(`http://${tvIp}:3000`);
+
     socket.on('connect', () => {
       setIsConnected(true);
       console.log('Connected to TV');
     });
-  
+
     socket.on('disconnect', () => {
       setIsConnected(false);
       console.log('Disconnected from TV');
     });
-  
+
     socket.on('connect_error', (err) => {
       console.log(`Connection failed: ${err.message}`);
     });
   };
-  
 
-  // Send a media file to the TV (for example, a video file)
   const sendMediaToTV = (mediaUrl: string) => {
     if (isConnected) {
       const socket = socketIOClient(ip);
@@ -52,16 +82,8 @@ const App = () => {
     }
   };
 
-  // Example: Button to send video media
   const handleSendVideo = () => {
     sendMediaToTV('http://path/to/video/file.mp4');
-  };
-
-  // Use the IP matching method here if the TV app is running and listens for the specific IP
-  const searchForDevices = async () => {
-    // Implement search logic based on TV app's IP matching functionality.
-    const tvDeviceList = ['192.168.1.2', '192.168.1.3']; // Example IPs
-    setDevices(tvDeviceList);
   };
 
   return (
